@@ -178,9 +178,106 @@ bash tests/integration/test_with_docker.sh
 | 类别 | 总数 | 已实现 | 待实现 |
 |------|------|-------|--------|
 | 单元测试 | 10 | 6 | 4 |
-| 性能测试 | 4 | 1 | 3 |
-| 集成测试 | 18 | 0 | 18 |
-| **合计** | **32** | **7** | **25** |
+| 性能测试 | 4 | 4 | 0 |
+| 集成测试 | 18 | 18 | 0 |
+| **合计** | **32** | **28** | **4** |
+
+## 7. 测试工具和脚本
+
+### 7.1 测试工具
+
+#### 7.1.1 日志生成器 (`tools/log_generator.py`)
+- [x] 支持多种日志格式（文本/JSON）
+- [x] 可配置生成速率和持续时间
+- [x] 支持文件轮转
+- [x] 模拟真实日志场景
+
+#### 7.1.2 Kafka 数据验证器 (`tools/kafka_validator.py`)
+- [x] 验证 Kafka 消息完整性
+- [x] 检查消息重复和格式
+- [x] 性能指标收集
+- [x] 生成详细验证报告
+
+### 7.2 自动化测试脚本
+
+#### 7.2.1 综合测试脚本 (`run_comprehensive_tests.sh`)
+- [x] 一键运行所有测试类型
+- [x] 支持选择性测试
+- [x] 自动环境检查和依赖安装
+- [x] 生成综合测试报告
+
+#### 7.2.2 集成测试脚本 (`integration/run_integration_tests.sh`)
+- [x] 自动启动 Docker 测试环境
+- [x] 完整数据流验证（Agent → Router → Kafka）
+- [x] 数据完整性检查
+- [x] 性能指标收集
+
+#### 7.2.3 性能测试脚本 (`performance/run_performance_tests.sh`)
+- [x] 多负载级别测试（低/中/高/峰值）
+- [x] 系统资源监控
+- [x] 吞吐量和延迟测试
+- [x] 性能基准报告
+
+#### 7.2.4 反压恢复测试脚本 (`integration/test_backpressure_recovery.sh`)
+- [x] Kafka 限流反压测试
+- [x] Router 宕机恢复测试
+- [x] Agent 宕机恢复测试
+- [x] 网络分区恢复测试
+
+## 8. 测试运行指南
+
+### 8.1 快速开始
+```bash
+# 运行快速测试（单元测试 + 集成测试）
+bash tests/run_comprehensive_tests.sh --quick
+
+# 运行完整测试套件
+bash tests/run_comprehensive_tests.sh
+```
+
+### 8.2 选择性测试
+```bash
+# 仅运行单元测试
+bash tests/run_comprehensive_tests.sh --unit-only
+
+# 仅运行集成测试
+bash tests/run_comprehensive_tests.sh --integration-only
+
+# 仅运行性能测试
+bash tests/run_comprehensive_tests.sh --performance-only
+
+# 仅运行反压恢复测试
+bash tests/run_comprehensive_tests.sh --backpressure-only
+```
+
+### 8.3 环境变量配置
+```bash
+# 集成测试配置
+export TEST_DURATION=300    # 测试持续时间（秒）
+export LOG_RATE=200         # 日志生成速率（条/秒）
+
+# 性能测试配置
+export PERF_TEST_DURATION=600  # 性能测试持续时间（秒）
+export LOW_RATE=100            # 低负载速率
+export HIGH_RATE=1000          # 高负载速率
+```
+
+## 9. 测试报告和结果
+
+### 9.1 报告位置
+所有测试结果保存在：`/tmp/comprehensive-test-results/comprehensive_test_YYYYMMDD_HHMMSS/`
+
+### 9.2 关键指标
+- **数据完整性成功率**: 目标 ≥ 95%
+- **吞吐量**: 根据负载级别验证
+- **故障恢复时间**: 目标 ≤ 60 秒
+- **资源使用**: CPU ≤ 80%, 内存 ≤ 2GB
+
+### 9.3 报告解读
+- `comprehensive_test_report.json`: 综合测试总结
+- `*_validation_report.json`: 数据验证报告
+- `*_system_metrics.csv`: 系统性能指标
+- `*.log`: 详细测试日志
 
 ## 7. 推荐并发配置测试
 
