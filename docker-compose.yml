@@ -1,0 +1,109 @@
+version: '3.8'
+
+services:
+  # ZooKeeper 用于 Agent 注册和监控
+  zookeeper:
+    image: zookeeper:latest
+    ports:
+      - "2181:2181"
+    environment:
+      ZOO_CFG_EXTRA: "server.1=0.0.0.0:2888:3888"
+      ZOO_PORT: 2181
+    networks:
+      - log-pipeline
+
+  # Kafka 消息队列
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://kafka:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - log-pipeline
+
+  # 管控平台（模拟服务 - 实际应该独立部署）
+  # 这里仅作为占位符，实际应该是独立的 REST 服务
+  control-platform:
+    image: kennethreitz/httpbin
+    ports:
+      - "8080:80"
+    networks:
+      - log-pipeline
+
+  # Monitor 服务（模拟服务）
+  monitor:
+    image: kennethreitz/httpbin
+    ports:
+      - "9200:80"
+    networks:
+      - log-pipeline
+
+  # Log Agent 实例
+  agent-1:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: agent
+    depends_on:
+      - zookeeper
+      - kafka
+      - control-platform
+    environment:
+      AGENT_ID: agent-001
+      ROUTER_SERVERS: router:9090
+      ZOOKEEPER_HOSTS: zookeeper:2181
+      CONTROL_PLATFORM_HOST: control-platform
+      CONTROL_PLATFORM_PORT: 80
+    volumes:
+      - agent-data-1:/var/lib/log-agent
+      - ./test-logs:/var/log/test
+    networks:
+      - log-pipeline
+    # 启动命令
+    command: log-agent /etc/log-pipeline/agent.properties
+
+  # Log Router 实例
+  router:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: router
+    depends_on:
+      - zookeeper
+      - kafka
+      - control-platform
+    environment:
+      ROUTER_ID: router-001
+      LISTEN_HOST: 0.0.0.0
+      LISTEN_PORT: 9090
+      IO_THREADS: 4
+      CONTROL_PLATFORM_HOST: control-platform
+      CONTROL_PLATFORM_PORT: 80
+      KAFKA_BROKERS: kafka:29092
+      MONITOR_HOST: monitor
+      MONITOR_PORT: 80
+    ports:
+      - "9090:9090"
+      - "9101:9101"
+    volumes:
+      - router-data:/var/lib/log-router
+    networks:
+      - log-pipeline
+    command: log-router /etc/log-pipeline/router.properties
+
+volumes:
+  agent-data-1:
+  router-data:
+
+networks:
+  log-pipeline:
+    driver: bridge
