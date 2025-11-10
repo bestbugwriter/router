@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(LogPipeline VERSION 1.0.0 LANGUAGES CXX)
+project(LogPipeline VERSION 1.0.0 LANGUAGES CXX C)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -48,6 +48,8 @@ FetchContent_Declare(
     GIT_TAG        r57
 )
 FetchContent_MakeAvailable(inih)
+add_library(inih ${inih_SOURCE_DIR}/ini.c)
+target_include_directories(inih PUBLIC ${inih_SOURCE_DIR})
 
 # 可选：zlib 支持压缩
 find_package(ZLIB)
@@ -56,14 +58,20 @@ if(ZLIB_FOUND)
 endif()
 
 # 可选：snappy 支持压缩
-find_package(Snappy)
-if(Snappy_FOUND)
-    add_compile_definitions(HAVE_SNAPPY)
-endif()
-
+FetchContent_Declare(
+    snappy
+    GIT_REPOSITORY https://github.com/google/snappy.git
+    GIT_TAG        1.1.9
+)
+FetchContent_MakeAvailable(snappy)
+add_compile_definitions(HAVE_SNAPPY)
 # Check for librdkafka
 find_package(PkgConfig REQUIRED)
 pkg_check_modules(RDKAFKA REQUIRED rdkafka++)
+
+if(RDKAFKA_FOUND)
+    add_compile_definitions(HAVE_LIBRDKAFKA)
+endif()
 
 # Check for zookeeper
 find_path(ZOOKEEPER_INCLUDE_DIR zookeeper/zookeeper.h)
@@ -128,10 +136,7 @@ if(ZLIB_FOUND)
     target_link_libraries(log-agent PRIVATE ZLIB::ZLIB)
 endif()
 
-if(Snappy_FOUND)
-    target_link_libraries(log-agent PRIVATE Snappy::Snappy)
-endif()
-
+target_link_libraries(log-agent PRIVATE snappy)
 target_include_directories(log-agent PRIVATE ${RDKAFKA_INCLUDE_DIRS})
 target_compile_options(log-agent PRIVATE ${RDKAFKA_CFLAGS_OTHER})
 
@@ -151,13 +156,15 @@ target_link_libraries(log-router
     Threads::Threads
 )
 
+if(ZOOKEEPER_LIBRARY)
+    target_link_libraries(log-router PRIVATE ${ZOOKEEPER_LIBRARY})
+endif()
+
 if(ZLIB_FOUND)
     target_link_libraries(log-router PRIVATE ZLIB::ZLIB)
 endif()
 
-if(Snappy_FOUND)
-    target_link_libraries(log-router PRIVATE Snappy::Snappy)
-endif()
+target_link_libraries(log-router PRIVATE snappy)
 
 target_include_directories(log-router PRIVATE ${RDKAFKA_INCLUDE_DIRS})
 target_compile_options(log-router PRIVATE ${RDKAFKA_CFLAGS_OTHER})
@@ -170,42 +177,8 @@ if(PROMETHEUS_CPP_FOUND)
     target_compile_definitions(log-router PRIVATE HAVE_PROMETHEUS_CPP)
 endif()
 
-# Keep forwarder executable for backward compatibility (symlink to router)
-add_executable(log-forwarder
-    ${ROUTER_SOURCES}
-    ${COMMON_SOURCES}
-)
-
-target_link_libraries(log-forwarder
-    PRIVATE
-    asio::asio
-    nlohmann_json::nlohmann_json
-    spdlog::spdlog
-    inih
-    ${RDKAFKA_LIBRARIES}
-    Threads::Threads
-)
-
-if(ZLIB_FOUND)
-    target_link_libraries(log-forwarder PRIVATE ZLIB::ZLIB)
-endif()
-
-if(Snappy_FOUND)
-    target_link_libraries(log-forwarder PRIVATE Snappy::Snappy)
-endif()
-
-target_include_directories(log-forwarder PRIVATE ${RDKAFKA_INCLUDE_DIRS})
-target_compile_options(log-forwarder PRIVATE ${RDKAFKA_CFLAGS_OTHER})
-
-if(PROMETHEUS_CPP_FOUND)
-    target_link_libraries(log-forwarder PRIVATE ${PROMETHEUS_CPP_LIBRARIES})
-    target_include_directories(log-forwarder PRIVATE ${PROMETHEUS_CPP_INCLUDE_DIRS})
-    target_compile_options(log-forwarder PRIVATE ${PROMETHEUS_CPP_CFLAGS_OTHER})
-    target_compile_definitions(log-forwarder PRIVATE HAVE_PROMETHEUS_CPP)
-endif()
-
 # Installation
-install(TARGETS log-agent log-router log-forwarder
+install(TARGETS log-agent log-router
     RUNTIME DESTINATION bin
 )
 
@@ -213,6 +186,5 @@ install(TARGETS log-agent log-router log-forwarder
 install(FILES 
     config/agent.properties 
     config/router.properties
-    config/forwarder.properties
     DESTINATION etc/log-pipeline
 )

@@ -29,6 +29,8 @@ echo "Compiling test_compressor..."
 g++ -std=c++17 \
     -I"$PROJECT_DIR/include" \
     -I"$BUILD_DIR/_deps/asio-src/include" \
+    -I"$BUILD_DIR/_deps/spdlog-src/include" \
+    -DHAVE_ZLIB -DHAVE_SNAPPY \
     "$PROJECT_DIR/tests/unit/test_compressor.cpp" \
     "$PROJECT_DIR/src/common/compressor.cpp" \
     -o test_compressor \

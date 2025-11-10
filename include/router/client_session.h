@@ -6,6 +6,7 @@
 #include <queue>
 #include <mutex>
 #include <condition_variable>
+#include "common/task_config.h"
 #include <asio.hpp>
 
 namespace logpipeline {
@@ -16,7 +17,7 @@ struct Message;
 } // namespace protocol
 
 class MessageQueueProducer;
-class MetricsAggregator;
+class RouterMetricsAggregator;
 
 // Router 客户端会话（处理单个 Agent 连接）
 // 负责：
@@ -27,7 +28,8 @@ class MetricsAggregator;
 class RouterClientSession : public std::enable_shared_from_this<RouterClientSession> {
 public:
     RouterClientSession(asio::ip::tcp::socket socket,
-                       MetricsAggregator* metrics_aggregator);
+                       RouterMetricsAggregator* metrics_aggregator,
+                       const TaskConfigMap& task_config);
     ~RouterClientSession();
     
     void start();
@@ -48,8 +50,9 @@ private:
     static constexpr size_t LOW_WATERMARK_BYTES = 32 * 1024 * 1024;  // 32MB
     
     asio::ip::tcp::socket socket_;
-    MetricsAggregator* metrics_aggregator_;
+    RouterMetricsAggregator* metrics_aggregator_;
     ProducerGetter producer_getter_;
+    TaskConfigMap task_config_map_;
     
     std::atomic<bool> running_{false};
     std::string agent_id_;

@@ -7,11 +7,14 @@
 #include <asio.hpp>
 #include <map>
 
+#include "common/task_config.h"
+#include <mutex>
+
 namespace logpipeline {
 
 class RouterClientSession;
 class MessageQueueProducer;
-class MetricsAggregator;
+class RouterMetricsAggregator;
 
 // Router TCP 服务器
 // 接收 Agent 发来的压缩日志数据
@@ -19,7 +22,7 @@ class MetricsAggregator;
 class RouterTCPServer {
 public:
     RouterTCPServer(const std::string& host, int port, int io_threads,
-                    MetricsAggregator* metrics_aggregator);
+                    RouterMetricsAggregator* metrics_aggregator);
     ~RouterTCPServer();
     
     // 启动/停止服务器
@@ -37,13 +40,20 @@ public:
     
     // 获取指定集群的生产者
     MessageQueueProducer* get_producer(const std::string& cluster_id) const;
+
+    // 设置任务配置
+    void set_task_config(const TaskConfigMap& config);
     
 private:
     std::string host_;
     int port_;
     int io_threads_;
     
-    MetricsAggregator* metrics_aggregator_;
+    RouterMetricsAggregator* metrics_aggregator_;
+
+    // 任务配置
+    TaskConfigMap task_config_map_;
+    mutable std::mutex task_config_mutex_;
     
     // 消息队列生产者映射 (cluster_id -> producer)
     std::map<std::string, std::unique_ptr<MessageQueueProducer>> producers_;

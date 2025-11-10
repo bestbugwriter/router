@@ -73,8 +73,9 @@ public:
     }
     
 private:
+    class Impl;
+    std::unique_ptr<Impl> impl_;
     Config config_;
-    // librdkafka 相关成员在实现文件中
 };
 
 // RabbitMQ 生产者

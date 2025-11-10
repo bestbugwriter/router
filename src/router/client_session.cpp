@@ -1,4 +1,5 @@
 #include "router/client_session.h"
+#include "router/metrics_aggregator.h"
 #include "common/message_queue.h"
 #include "common/protocol.h"
 #include "router/metrics_aggregator.h"
@@ -8,9 +9,11 @@
 namespace logpipeline {
 
 RouterClientSession::RouterClientSession(asio::ip::tcp::socket socket,
-                                        MetricsAggregator* metrics_aggregator)
+                                        RouterMetricsAggregator* metrics_aggregator,
+                                        const TaskConfigMap& task_config)
     : socket_(std::move(socket)),
       metrics_aggregator_(metrics_aggregator),
+      task_config_map_(task_config),
       running_(false) {
 }
 
@@ -120,16 +123,38 @@ void RouterClientSession::process_message(const protocol::Message& msg) {
 }
 
 void RouterClientSession::process_data_message(const protocol::Message& msg) {
-    // 数据消息来自 Agent
-    // TODO: 根据任务配置路由到相应的消息队列
-    
+    std::string task_id_str = std::to_string(msg.header.task_id);
     spdlog::debug("Processing data message: task_id={}, offset={}, size={}",
-                 msg.header.task_id, msg.header.offset, msg.payload.size());
+                 task_id_str, msg.header.offset, msg.payload.size());
+
+    auto task_it = task_config_map_.find(task_id_str);
+    if (task_it == task_config_map_.end()) {
+        spdlog::warn("No task configuration found for task_id: {}", task_id_str);
+        return;
+    }
+
+    const auto& task_info = task_it->second;
+
+    if (producer_getter_) {
+        auto producer = producer_getter_(task_info.cluster_id);
+        if (producer) {
+            logpipeline::MQMessage mq_msg;
+            mq_msg.topic = task_info.topic;
+            mq_msg.payload = msg.payload;
+            mq_msg.task_id = msg.header.task_id;
+            mq_msg.offset = msg.header.offset;
+            
+            if (!producer->send(mq_msg)) {
+                spdlog::error("Failed to send message to Kafka for task {}", task_id_str);
+            } else {
+                spdlog::debug("Successfully sent message for task {} to topic {}", task_id_str, task_info.topic);
+            }
+        } else {
+            spdlog::warn("No producer found for cluster '{}'", task_info.cluster_id);
+        }
+    }
     
-    // 这里需要根据 task_id 查询任务配置，获取目标集群和压缩类型
-    // 然后解压数据，发送到相应的消息队列
-    
-    // 暂时发送 ACK
+    // Send ACK back to agent
     send_ack(msg.header.task_id, msg.header.offset);
 }
 

@@ -100,7 +100,8 @@ private:
     }
 };
 
-TaskManager::TaskManager() : running_(false) {
+TaskManager::TaskManager(AgentTCPClient* tcp_client, MetricsCollector* metrics_collector) 
+    : running_(false), tcp_client_(tcp_client), metrics_collector_(metrics_collector) {
 }
 
 TaskManager::~TaskManager() {
@@ -132,10 +133,11 @@ void TaskManager::update_tasks(const std::vector<TaskConfig>& tasks) {
             start_worker(task);
         } else {
             // Task exists, check if config changed
-            // For now, we'll restart the worker if config differs
-            // In a real implementation, we'd do more sophisticated diffing
-            stop_worker(task.task_id);
-            start_worker(task);
+            if (!(it->second->get_config() == task)) {
+                spdlog::info("Task {} configuration changed, restarting worker.", task.task_id);
+                stop_worker(task.task_id);
+                start_worker(task);
+            }
         }
     }
 }
@@ -173,7 +175,7 @@ std::vector<TaskConfig> TaskManager::get_active_tasks() const {
 }
 
 void TaskManager::start_worker(const TaskConfig& config) {
-    auto worker = std::make_unique<TaskWorker>(config, nullptr, nullptr);
+    auto worker = std::make_unique<TaskWorker>(config, metrics_collector_, tcp_client_);
     worker->start();
     workers_[config.task_id] = std::move(worker);
 }

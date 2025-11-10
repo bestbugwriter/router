@@ -40,8 +40,8 @@ public:
         
         int flags = ephemeral ? ZOO_EPHEMERAL : 0;
         char path_buffer[1024];
-        return zoo_acreate2(zh_, path.c_str(), value.c_str(), value.length(),
-                         &ZOO_OPEN_ACL_UNSAFE, flags, path_buffer, sizeof(path_buffer), 
+        return zoo_acreate(zh_, path.c_str(), value.c_str(), value.length(),
+                         &ZOO_OPEN_ACL_UNSAFE, flags,
                          [](int rc, const char *value, const void *data) {
                              // Completion callback
                          }, nullptr) == ZOK;
@@ -88,8 +88,8 @@ public:
             current += "/" + segment;
             if (!exists(current)) {
                 char path_buffer[1024];
-                if (zoo_create2(zh_, current.c_str(), nullptr, 0,
-                              &ZOO_OPEN_ACL_UNSAFE, 0, path_buffer, sizeof(path_buffer), nullptr) != ZOK) {
+                if (zoo_create(zh_, current.c_str(), nullptr, 0,
+                              &ZOO_OPEN_ACL_UNSAFE, 0, path_buffer, sizeof(path_buffer)) != ZOK) {
                     return false;
                 }
             }
@@ -121,6 +121,15 @@ bool ZKManager::start() {
         return true;
     }
     
+    // Wait for the connection to be established
+    for (int i = 0; i < 10; ++i) {
+        if (impl_->is_connected()) {
+            break;
+        }
+        spdlog::info("Waiting for ZooKeeper connection...");
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+
     if (!impl_->is_connected()) {
         spdlog::error("Failed to connect to ZooKeeper");
         return false;

@@ -1,5 +1,6 @@
 #include <cassert>
 #include <iostream>
+#include <cstring> // Required for memcpy
 #include "common/protocol.h"
 
 using namespace logpipeline::protocol;

@@ -122,7 +122,7 @@ bool ForwarderConfig::load_from_file(const std::string& filename) {
     kafka_bootstrap_servers = props.get_string_list("kafka.bootstrap.servers", ",");
     
     // Load Kafka default properties
-    for (const auto& [key, value] : props.properties_) {
+    for (const auto& [key, value] : props.get_all()) {
         if (key.find("kafka.default_props.") == 0) {
             std::string prop_key = key.substr(20); // Remove "kafka.default_props."
             kafka_default_props[prop_key] = value;
@@ -154,90 +154,13 @@ bool RouterConfig::load_from_file(const std::string& filename) {
     control_platform_host = props.get_string("control.platform.host", "127.0.0.1");
     control_platform_port = props.get_int("control.platform.port", 8080);
     
-    // 负载均衡与反压
-    session_buffer_high_watermark_mb = props.get_int("backpressure.session_buffer_high_watermark_mb", 64);
-    session_buffer_low_watermark_mb = props.get_int("backpressure.session_buffer_low_watermark_mb", 32);
-    
-    // 指标
-    metrics_prometheus_listen = props.get_string("metrics.prometheus_listen", "0.0.0.0:9101");
-    
     // Monitor 服务配置
     monitor_host = props.get_string("monitor.host", "127.0.0.1");
     monitor_port = props.get_int("monitor.port", 9200);
     monitor_send_interval_sec = props.get_int("monitor.send_interval_sec", 10);
-    
-    // 加载 Kafka 集群配置
-    for (const auto& [key, value] : props.properties_) {
-        if (key.find("mq.kafka.cluster.") == 0) {
-            // 格式: mq.kafka.cluster.cluster-id.brokers = ...
-            // 或: mq.kafka.cluster.cluster-id.version = ...
-            // 或: mq.kafka.cluster.cluster-id.props.xxx = ...
-            
-            std::string cluster_part = key.substr(17);  // Remove "mq.kafka.cluster."
-            size_t dot_pos = cluster_part.find('.');
-            if (dot_pos != std::string::npos) {
-                std::string cluster_id = cluster_part.substr(0, dot_pos);
-                std::string prop_name = cluster_part.substr(dot_pos + 1);
-                
-                auto& cluster = kafka_clusters[cluster_id];
-                
-                if (prop_name == "brokers") {
-                    cluster.brokers = props.get_string_list(key, ",");
-                } else if (prop_name == "version") {
-                    cluster.version = value;
-                } else if (prop_name.find("props.") == 0) {
-                    std::string prop_key = prop_name.substr(6);
-                    cluster.properties[prop_key] = value;
-                }
-            }
-        }
-    }
-    
-    // 加载 RabbitMQ 集群配置
-    for (const auto& [key, value] : props.properties_) {
-        if (key.find("mq.rabbitmq.cluster.") == 0) {
-            std::string cluster_part = key.substr(20);
-            size_t dot_pos = cluster_part.find('.');
-            if (dot_pos != std::string::npos) {
-                std::string cluster_id = cluster_part.substr(0, dot_pos);
-                std::string prop_name = cluster_part.substr(dot_pos + 1);
-                
-                auto& cluster = rabbitmq_clusters[cluster_id];
-                
-                if (prop_name == "hosts") {
-                    cluster.brokers = props.get_string_list(key, ",");
-                } else if (prop_name == "version") {
-                    cluster.version = value;
-                } else if (prop_name.find("props.") == 0) {
-                    std::string prop_key = prop_name.substr(6);
-                    cluster.properties[prop_key] = value;
-                }
-            }
-        }
-    }
-    
-    // 加载 Pulsar 集群配置
-    for (const auto& [key, value] : props.properties_) {
-        if (key.find("mq.pulsar.cluster.") == 0) {
-            std::string cluster_part = key.substr(18);
-            size_t dot_pos = cluster_part.find('.');
-            if (dot_pos != std::string::npos) {
-                std::string cluster_id = cluster_part.substr(0, dot_pos);
-                std::string prop_name = cluster_part.substr(dot_pos + 1);
-                
-                auto& cluster = pulsar_clusters[cluster_id];
-                
-                if (prop_name == "url") {
-                    cluster.broker_url = value;
-                } else if (prop_name == "version") {
-                    cluster.version = value;
-                } else if (prop_name.find("props.") == 0) {
-                    std::string prop_key = prop_name.substr(6);
-                    cluster.properties[prop_key] = value;
-                }
-            }
-        }
-    }
+
+    // Kafka 默认压缩
+    kafka_enable_compression = props.get_bool("kafka.enable_compression", true);
     
     return true;
 }

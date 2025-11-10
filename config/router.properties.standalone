@@ -1,0 +1,21 @@
+# 单机测试 - Router 配置
+
+# Router 唯一标识
+router.id = router-standalone-001
+
+# 服务器监听配置
+server.listen_host = 0.0.0.0
+server.listen_port = 9090
+server.io_threads = 4
+
+# 管控平台
+control.platform.host = 127.0.0.1
+control.platform.port = 8080
+
+# 监控服务
+monitor.host = 127.0.0.1
+monitor.port = 9200
+monitor.send_interval_sec = 10
+
+# Kafka 默认压缩
+kafka.enable_compression = true

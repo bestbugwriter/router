@@ -6,8 +6,7 @@
 namespace logpipeline {
 
 RouterTCPServer::RouterTCPServer(const std::string& host, int port, int io_threads,
-                               MetricsAggregator* metrics_aggregator)
-    : host_(host),
+                                RouterMetricsAggregator* metrics_aggregator)    : host_(host),
       port_(port),
       io_threads_(io_threads),
       metrics_aggregator_(metrics_aggregator),
@@ -95,14 +94,28 @@ MessageQueueProducer* RouterTCPServer::get_producer(const std::string& cluster_i
     return nullptr;
 }
 
+void RouterTCPServer::set_task_config(const TaskConfigMap& config) {
+    std::lock_guard<std::mutex> lock(task_config_mutex_);
+    task_config_map_ = config;
+    spdlog::info("Updated task configuration with {} tasks", config.size());
+}
+
 void RouterTCPServer::start_accept() {
     if (!running_) {
         return;
     }
     
+    // Lock and copy the config to pass to the session
+    TaskConfigMap config_copy;
+    {
+        std::lock_guard<std::mutex> lock(task_config_mutex_);
+        config_copy = task_config_map_;
+    }
+
     auto session = std::make_shared<RouterClientSession>(
         asio::ip::tcp::socket(*io_context_),
-        metrics_aggregator_);
+        metrics_aggregator_,
+        config_copy);
     
     acceptor_->async_accept(
         session->get_socket(),

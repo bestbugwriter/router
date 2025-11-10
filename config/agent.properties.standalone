@@ -1,0 +1,18 @@
+# 单机测试 - Agent 配置
+
+# Agent 唯一标识
+agent.id = agent-standalone-001
+
+# Router(s) 地址
+agent.forwarders = 127.0.0.1:9090
+
+# Checkpoint 文件路径
+agent.checkpoint_file_path = /tmp/agent_offsets.json
+
+# ZooKeeper (单机测试中可留空或指向一个伪服务)
+zookeeper.hosts = 127.0.0.1:2181 
+zookeeper.agent_status_path = /log-pipeline/agents
+zookeeper.task_config_path = /log-pipeline/tasks/standalone-group
+
+# 指标上报间隔
+metrics.report_interval_sec = 10

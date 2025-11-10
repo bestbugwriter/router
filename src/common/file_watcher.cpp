@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <sys/stat.h>
 #include <cstring>
+#include <map>
 #elif defined(_WIN32)
 #include <windows.h>
 #elif defined(__APPLE__)

@@ -9,6 +9,8 @@
 #include <csignal>
 #include <atomic>
 
+#include <spdlog/sinks/stdout_color_sinks.h>
+
 std::atomic<bool> g_shutdown_requested{false};
 
 void signal_handler(int signal) {
@@ -17,6 +19,11 @@ void signal_handler(int signal) {
 }
 
 int main(int argc, char* argv[]) {
+    // Setup logging
+    auto console = spdlog::stdout_color_mt("console");
+    spdlog::set_default_logger(console);
+    spdlog::set_level(spdlog::level::debug);
+
     if (argc != 2) {
         std::cerr << "Usage: " << argv[0] << " <config_file>" << std::endl;
         return 1;
@@ -51,7 +58,7 @@ int main(int argc, char* argv[]) {
         auto metrics_collector = std::make_unique<logpipeline::MetricsCollector>(tcp_client.get());
         metrics_collector->start(config.metrics_report_interval_sec);
         
-        auto task_manager = std::make_unique<logpipeline::TaskManager>();
+        auto task_manager = std::make_unique<logpipeline::TaskManager>(tcp_client.get(), metrics_collector.get());
         task_manager->start();
         
         auto zk_manager = std::make_unique<logpipeline::ZKManager>(

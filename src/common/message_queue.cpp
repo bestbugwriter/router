@@ -17,6 +17,21 @@ namespace logpipeline {
 
 class KafkaProducerImpl::Impl {
 public:
+    Impl() = default;
+    ~Impl() {
+        if (running_) {
+            stop();
+        }
+    }
+
+    void stop() {
+        running_ = false;
+        queue_cv_.notify_all();
+        if (producer_thread_.joinable()) {
+            producer_thread_.join();
+        }
+    }
+
 #ifdef HAVE_LIBRDKAFKA
     std::unique_ptr<RdKafka::Producer> producer_;
     std::map<std::string, std::unique_ptr<RdKafka::Topic>> topics_;
@@ -32,7 +47,7 @@ public:
 };
 
 KafkaProducerImpl::KafkaProducerImpl(const Config& config)
-    : config_(config) {
+    : impl_(std::make_unique<Impl>()), config_(config) {
 }
 
 KafkaProducerImpl::~KafkaProducerImpl() {
@@ -73,14 +88,18 @@ bool KafkaProducerImpl::start() {
     }
     
     // 创建生产者
-    RdKafka::Producer* producer = RdKafka::Producer::create(conf, error_str);
-    if (!producer) {
+    impl_->producer_.reset(RdKafka::Producer::create(conf, error_str));
+    if (!impl_->producer_) {
         spdlog::error("Failed to create Kafka producer: {}", error_str);
         delete conf;
         return false;
     }
     
     delete conf;
+    
+    impl_->running_ = true;
+    // In a real implementation, a thread would poll the producer and handle delivery reports.
+    // This is simplified for now.
     
     spdlog::info("Kafka producer started successfully");
     return true;
@@ -91,13 +110,37 @@ bool KafkaProducerImpl::start() {
 }
 
 void KafkaProducerImpl::stop() {
-    spdlog::info("Stopping Kafka producer");
+    if (impl_->running_.exchange(false)) {
+        spdlog::info("Stopping Kafka producer");
+        impl_->stop();
+    }
 }
 
 bool KafkaProducerImpl::send(const MQMessage& msg) {
 #ifdef HAVE_LIBRDKAFKA
+    if (!impl_->running_) return false;
+
     spdlog::debug("Sending message to Kafka topic: {}", msg.topic);
-    // 实现消息发送逻辑
+    
+    RdKafka::ErrorCode err = impl_->producer_->produce(
+        msg.topic,
+        RdKafka::Topic::PARTITION_UA,
+        RdKafka::Producer::RK_MSG_COPY,
+        const_cast<void*>(static_cast<const void*>(msg.payload.data())),
+        msg.payload.size(),
+        msg.key.c_str(),
+        msg.key.length(),
+        0, /* timestamp */
+        nullptr /* msg_opaque */);
+
+    if (err != RdKafka::ERR_NO_ERROR) {
+        spdlog::error("Failed to produce to topic {}: {}", msg.topic, RdKafka::err2str(err));
+        impl_->failed_count_++;
+        return false;
+    }
+
+    impl_->sent_count_++;
+    impl_->producer_->poll(0);
     return true;
 #else
     return false;
@@ -105,11 +148,11 @@ bool KafkaProducerImpl::send(const MQMessage& msg) {
 }
 
 uint64_t KafkaProducerImpl::get_sent_count() const {
-    return 0;
+    return impl_->sent_count_.load();
 }
 
 uint64_t KafkaProducerImpl::get_failed_count() const {
-    return 0;
+    return impl_->failed_count_.load();
 }
 
 // ==================== RabbitMQ Producer 实现 ====================

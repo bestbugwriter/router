@@ -1,0 +1,12 @@
+{
+    "tasks": [
+        {
+            "task_id": "1001",
+            "log_path_pattern": "/tmp/test_app.log",
+            "kafka_topic": "log-test-topic",
+            "properties": {
+                "kafka_cluster_id": "local_kafka"
+            }
+        }
+    ]
+}

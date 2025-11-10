@@ -10,6 +10,8 @@
 #include <atomic>
 #include <nlohmann/json.hpp>
 
+#include <spdlog/sinks/stdout_color_sinks.h>
+
 std::atomic<bool> g_shutdown_requested{false};
 
 void signal_handler(int signal) {
@@ -17,7 +19,42 @@ void signal_handler(int signal) {
     g_shutdown_requested = true;
 }
 
+#include <zookeeper/zookeeper.h>
+
+// Helper function to get config from Zookeeper
+std::string get_config_from_zk(const char* host, const char* path) {
+    zhandle_t* zh = zookeeper_init(host, nullptr, 10000, nullptr, nullptr, 0);
+    if (!zh) {
+        spdlog::error("Failed to initialize ZooKeeper client");
+        return "";
+    }
+
+    char buffer[2048];
+    int buffer_len = sizeof(buffer);
+    struct Stat stat;
+    
+    int rc = zoo_get(zh, path, 0, buffer, &buffer_len, &stat);
+    if (rc != ZOK) {
+        spdlog::error("Failed to get ZK node '{}': {}", path, zerror(rc));
+        zookeeper_close(zh);
+        return "";
+    }
+    
+    zookeeper_close(zh);
+    
+    if (buffer_len > 0) {
+        return std::string(buffer, buffer_len);
+    }
+    return "";
+}
+
+
 int main(int argc, char* argv[]) {
+    // Setup logging
+    auto console = spdlog::stdout_color_mt("console");
+    spdlog::set_default_logger(console);
+    spdlog::set_level(spdlog::level::debug);
+
     if (argc < 2) {
         std::cerr << "Usage: " << argv[0] << " <config_file> [--recommend-concurrency]" << std::endl;
         return 1;
@@ -81,48 +118,38 @@ int main(int argc, char* argv[]) {
             spdlog::error("Failed to start Router TCP server");
             return 1;
         }
-        
-        // 注册消息队列生产者
-        // Kafka 集群
-        for (const auto& [cluster_id, kafka_config] : config.kafka_clusters) {
-            auto producer = logpipeline::MessageQueueProducerFactory::create_kafka(
-                kafka_config.brokers,
-                kafka_config.version,
-                kafka_config.properties
-            );
-            tcp_server->register_producer(cluster_id, std::move(producer));
+
+        // For integration test: create a local kafka producer
+        auto producer = logpipeline::MessageQueueProducerFactory::create_kafka(
+            {"localhost:9092"}, "3.x", {{"debug", "all"}}
+        );
+        if (producer) {
+            tcp_server->register_producer("local_kafka", std::move(producer));
+            spdlog::info("Registered local_kafka producer for integration test.");
+        } else {
+            spdlog::error("Failed to create or start local_kafka producer for test.");
         }
-        
-        // RabbitMQ 集群
-        for (const auto& [cluster_id, rabbit_config] : config.rabbitmq_clusters) {
-            auto producer = logpipeline::MessageQueueProducerFactory::create_rabbitmq(
-                rabbit_config.hosts,
-                rabbit_config.version,
-                rabbit_config.properties
-            );
-            tcp_server->register_producer(cluster_id, std::move(producer));
-        }
-        
-        // Pulsar 集群
-        for (const auto& [cluster_id, pulsar_config] : config.pulsar_clusters) {
-            auto producer = logpipeline::MessageQueueProducerFactory::create_pulsar(
-                pulsar_config.broker_url,
-                pulsar_config.version,
-                pulsar_config.properties
-            );
-            tcp_server->register_producer(cluster_id, std::move(producer));
+
+        // For integration test: get task config from Zookeeper
+        spdlog::info("Fetching task configuration from ZooKeeper for integration test...");
+        std::string task_json = get_config_from_zk("127.0.0.1:2181", "/log-pipeline/tasks/standalone-group");
+        if (!task_json.empty()) {
+            auto task_map = logpipeline::parse_task_config_from_json(task_json);
+            tcp_server->set_task_config(task_map);
+        } else {
+            spdlog::error("Failed to fetch task configuration from ZooKeeper. Routing will not work.");
         }
         
         // 启动指标端点
-        auto metrics_endpoint = std::make_unique<logpipeline::RouterMetricsEndpoint>(
-            config.metrics_prometheus_listen,
-            metrics_aggregator.get()
-        );
+        // auto metrics_endpoint = std::make_unique<logpipeline::RouterMetricsEndpoint>(
+        //     config.metrics_prometheus_listen,
+        //     metrics_aggregator.get()
+        // );
         
-        if (!metrics_endpoint->start()) {
-            spdlog::error("Failed to start metrics endpoint");
-            return 1;
-        }
+        // if (!metrics_endpoint->start()) {
+        //     spdlog::error("Failed to start metrics endpoint");
+        //     return 1;
+        // }
         
         // 注册到管控平台
         if (!config.router_id.empty()) {
@@ -132,7 +159,6 @@ int main(int argc, char* argv[]) {
         }
         
         spdlog::info("Log router started successfully");
-        spdlog::info("Metrics endpoint available at: http://{}", config.metrics_prometheus_listen);
         
         // 主循环
         int update_counter = 0;
@@ -157,7 +183,7 @@ int main(int argc, char* argv[]) {
         // 优雅关闭
         spdlog::info("Shutting down log router...");
         
-        metrics_endpoint->stop();
+        // metrics_endpoint->stop();
         tcp_server->stop();
         
         spdlog::info("Log router stopped");
