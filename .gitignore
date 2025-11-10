@@ -1,9 +1,11 @@
 # Build directories
 build/
+build_tests/
 cmake-build-*/
 
 # Compiled binaries
 log-agent
+log-router
 log-forwarder
 
 # Configuration files with local changes
@@ -40,3 +42,12 @@ core.*
 *.prof
 *.gcda
 *.gcno
+
+# Test data
+test-logs/
+perf_*
+*.csv
+
+# Docker volumes
+agent-data-*/
+router-data/
