@@ -1,0 +1,42 @@
+# Build directories
+build/
+cmake-build-*/
+
+# Compiled binaries
+log-agent
+log-forwarder
+
+# Configuration files with local changes
+config/local_*.properties
+
+# Log files
+*.log
+logs/
+
+# Checkpoint files
+offsets.json
+*.json.tmp
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Core dumps
+core
+core.*
+
+# Profiling data
+*.prof
+*.gcda
+*.gcno
