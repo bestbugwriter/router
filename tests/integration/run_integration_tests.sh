@@ -19,10 +19,10 @@ NC='\033[0m' # No Color
 # 配置变量
 TEST_DURATION=${TEST_DURATION:-300}  # 5分钟测试
 LOG_RATE=${LOG_RATE:-200}           # 每秒200条日志
-KAFKA_TOPIC=${KAFKA_TOPIC:-"test-logs"}
-COMPOSE_FILE="$PROJECT_DIR/docker-compose.yml"
+KAFKA_TOPIC=${KAFKA_TOPIC:-"test-logs-$(date +%s)"}
+COMPOSE_FILE="$PROJECT_DIR/docker-compose.test.yml"
 LOG_DIR="/tmp/integration-test-logs"
-RESULTS_DIR="/tmp/integration-test-results"
+RESULTS_DIR="/tmp/integration-test-results-$(date +%Y%m%d_%H%M%S)"
 
 # 服务健康检查函数
 check_service_health() {
@@ -221,42 +221,66 @@ start_test_environment() {
 
 # 运行集成测试
 run_integration_test() {
-    echo -e "${BLUE}开始集成测试...${NC}"
-    echo "测试持续时间: ${TEST_DURATION}秒"
-    echo "日志生成速率: ${LOG_RATE}条/秒"
-    echo "Kafka Topic: $KAFKA_TOPIC"
+    echo -e "${BLUE}====== 开始集成测试 ======${NC}"
+    echo "测试参数:"
+    echo "  持续时间: ${TEST_DURATION}秒"
+    echo "  生成速率: ${LOG_RATE}条/秒"
+    echo "  Kafka Topic: $KAFKA_TOPIC"
+    echo "  结果目录: $RESULTS_DIR"
+    echo ""
+    
+    # 创建结果目录
+    mkdir -p "$RESULTS_DIR"
     
     # 在后台生成日志
     echo -e "${BLUE}启动日志生成器...${NC}"
+    echo "命令: python3 $TOOLS_DIR/log_generator.py \\"
+    echo "  --output-dir $LOG_DIR \\"
+    echo "  --duration $TEST_DURATION \\"
+    echo "  --rate $LOG_RATE \\"
+    echo "  --format json"
+    echo ""
+    
     python3 "$TOOLS_DIR/log_generator.py" \
         --output-dir "$LOG_DIR" \
         --duration "$TEST_DURATION" \
         --rate "$LOG_RATE" \
         --format json \
-        > "$RESULTS_DIR/log_generator.log" 2>&1 &
+        2>&1 | tee "$RESULTS_DIR/log_generator.log" &
     
     LOG_GENERATOR_PID=$!
     echo -e "${GREEN}✓ 日志生成器已启动 (PID: $LOG_GENERATOR_PID)${NC}"
+    echo ""
     
     # 等待一段时间让系统开始处理日志
+    echo -e "${YELLOW}等待系统处理日志...${NC}"
     sleep 10
     
     # 启动 Kafka 验证器
     echo -e "${BLUE}启动 Kafka 数据验证器...${NC}"
+    echo "命令: python3 $TOOLS_DIR/kafka_validator.py \\"
+    echo "  --bootstrap-servers localhost:9092 \\"
+    echo "  --topic $KAFKA_TOPIC \\"
+    echo "  --duration $((TEST_DURATION - 20)) \\"
+    echo "  --output-file $RESULTS_DIR/validation_report.json"
+    echo ""
+    
     python3 "$TOOLS_DIR/kafka_validator.py" \
         --bootstrap-servers "localhost:9092" \
         --topic "$KAFKA_TOPIC" \
         --duration "$((TEST_DURATION - 20))" \
         --output-file "$RESULTS_DIR/validation_report.json" \
-        > "$RESULTS_DIR/kafka_validator.log" 2>&1 &
+        2>&1 | tee "$RESULTS_DIR/kafka_validator.log" &
     
     KAFKA_VALIDATOR_PID=$!
     echo -e "${GREEN}✓ Kafka 验证器已启动 (PID: $KAFKA_VALIDATOR_PID)${NC}"
+    echo ""
     
     # 监控测试进度
     local elapsed=0
     while [ $elapsed -lt $TEST_DURATION ]; do
-        echo -e "${BLUE}测试进度: $((elapsed * 100 / TEST_DURATION))% ($elapsed/${TEST_DURATION}秒)${NC}"
+        local progress=$((elapsed * 100 / TEST_DURATION))
+        echo -e "${BLUE}[测试进度] $progress% | $elapsed/${TEST_DURATION}秒${NC}"
         
         # 检查进程是否还在运行
         if ! kill -0 $LOG_GENERATOR_PID 2>/dev/null; then
@@ -281,13 +305,24 @@ run_integration_test() {
 
 # 收集测试结果
 collect_test_results() {
-    echo -e "${BLUE}收集测试结果...${NC}"
+    echo ""
+    echo -e "${BLUE}====== 收集测试结果 ======${NC}"
+    echo ""
     
     # 收集 Docker 日志
     mkdir -p "$RESULTS_DIR/logs"
-    docker-compose -f "$COMPOSE_FILE" logs agent-1 > "$RESULTS_DIR/logs/agent.log" 2>&1
+    
+    echo -e "${BLUE}收集 Router 日志...${NC}"
     docker-compose -f "$COMPOSE_FILE" logs router > "$RESULTS_DIR/logs/router.log" 2>&1
+    echo "  保存到: $RESULTS_DIR/logs/router.log"
+    
+    echo -e "${BLUE}收集 Kafka 日志...${NC}"
     docker-compose -f "$COMPOSE_FILE" logs kafka > "$RESULTS_DIR/logs/kafka.log" 2>&1
+    echo "  保存到: $RESULTS_DIR/logs/kafka.log"
+    
+    echo -e "${BLUE}收集 ZooKeeper 日志...${NC}"
+    docker-compose -f "$COMPOSE_FILE" logs zookeeper > "$RESULTS_DIR/logs/zookeeper.log" 2>&1
+    echo "  保存到: $RESULTS_DIR/logs/zookeeper.log"
     
     # 统计生成的日志文件
     local log_files_count=$(find "$LOG_DIR" -name "*.log" -o -name "*.json" | wc -l)
@@ -314,6 +349,48 @@ print(f'  吞吐量: {perf[\"throughput_msgs_per_sec\"]:.2f} 条/秒')
 "
     fi
     
+    # 生成测试报告
+    echo ""
+    echo -e "${BLUE}生成测试报告...${NC}"
+    
+    cat > "$RESULTS_DIR/test_report.txt" << REPORT_EOF
+========================================
+集成测试报告
+========================================
+
+生成时间: $(date '+%Y-%m-%d %H:%M:%S')
+
+测试配置:
+  持续时间: ${TEST_DURATION}秒
+  日志速率: ${LOG_RATE}条/秒
+  Kafka Topic: $KAFKA_TOPIC
+
+结果统计:
+  日志文件数量: $log_files_count
+  日志总大小: $total_log_size
+
+结果目录: $RESULTS_DIR
+
+日志文件:
+  - logs/router.log
+  - logs/kafka.log
+  - logs/zookeeper.log
+  - log_generator.log
+  - kafka_validator.log
+
+查看日志:
+  cat $RESULTS_DIR/logs/router.log
+  cat $RESULTS_DIR/logs/kafka.log
+  cat $RESULTS_DIR/kafka_validator.log
+
+验证报告:
+  cat $RESULTS_DIR/validation_report.json
+
+========================================
+REPORT_EOF
+    
+    echo "  保存到: $RESULTS_DIR/test_report.txt"
+    echo ""
     echo -e "${GREEN}✓ 测试结果已保存到: $RESULTS_DIR${NC}"
 }
 
@@ -338,21 +415,25 @@ cleanup_test_environment() {
 
 # 主函数
 main() {
+    echo ""
     echo -e "${BLUE}========================================${NC}"
-    echo -e "${BLUE}    Log Pipeline 集成测试${NC}"
+    echo -e "${BLUE}    Log Pipeline 集成测试 - 开始${NC}"
     echo -e "${BLUE}========================================${NC}"
     echo ""
     
     # 检查依赖
+    echo -e "${BLUE}检查依赖...${NC}"
     if ! command -v docker-compose >/dev/null 2>&1; then
         echo -e "${RED}✗ docker-compose 未安装${NC}"
         exit 1
     fi
+    echo -e "${GREEN}✓ docker-compose 已安装${NC}"
     
     if ! command -v python3 >/dev/null 2>&1; then
         echo -e "${RED}✗ python3 未安装${NC}"
         exit 1
     fi
+    echo -e "${GREEN}✓ python3 已安装${NC}"
     
     # 检查 Python 依赖
     if ! python3 -c "import kafka" 2>/dev/null; then
@@ -376,7 +457,15 @@ main() {
     echo -e "${GREEN}========================================${NC}"
     echo -e "${GREEN}    集成测试完成！${NC}"
     echo -e "${GREEN}========================================${NC}"
-    echo -e "测试结果保存在: ${BLUE}$RESULTS_DIR${NC}"
+    echo ""
+    echo -e "✓ 测试结果保存在:"
+    echo -e "  ${BLUE}$RESULTS_DIR${NC}"
+    echo ""
+    echo "快速查看结果:"
+    echo "  cat $RESULTS_DIR/test_report.txt"
+    echo "  cat $RESULTS_DIR/logs/router.log"
+    echo "  cat $RESULTS_DIR/kafka_validator.log"
+    echo ""
 }
 
 # 运行主函数
