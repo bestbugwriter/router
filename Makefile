@@ -38,47 +38,48 @@ build-static:
 	@echo "$(BLUE)===> 编译项目（静态链接）$(NC)"
 	@./build.sh --static
 
-# 构建 Docker 镜像
 docker-build:
 	@echo "$(BLUE)===> 构建 Docker 镜像$(NC)"
-	@docker-compose -f docker-compose.test.yml build
+	@if command -v docker-compose >/dev/null 2>&1; then \
+		docker-compose -f docker-compose.test.yml build; \
+	else \
+		docker compose -f docker-compose.test.yml build; \
+	fi
 
-# 运行集成测试（完全容器化）
 docker-test:
 	@echo "$(BLUE)===> 运行集成测试（容器化，无需本地 Python 环境）$(NC)"
 	@echo ""
 	@./run_integration_test.sh
 	@echo ""
 
-# 运行完整测试
 test:
 	@echo "$(BLUE)===> 运行完整测试$(NC)"
 	@cd tests && make test
 
-# 运行快速测试
 test-quick:
 	@echo "$(BLUE)===> 运行快速测试$(NC)"
 	@cd tests && make test-quick
 
-# 运行集成测试
 test-integration:
 	@echo "$(BLUE)===> 运行集成测试$(NC)"
 	@cd tests && make test-integration
 
-# 清理
 clean:
 	@echo "$(BLUE)===> 清理构建文件$(NC)"
 	@rm -rf build/
 	@rm -f CMakeCache.txt
 	@echo "$(GREEN)✓ 清理完成$(NC)"
 
-# 清理 Docker 相关
 clean-docker:
 	@echo "$(BLUE)===> 清理 Docker 容器和结果$(NC)"
-	@docker-compose -f docker-compose.yml down --volumes 2>/dev/null || true
-	@docker-compose -f docker-compose.test.yml down --volumes 2>/dev/null || true
+	@if command -v docker-compose >/dev/null 2>&1; then \
+		docker-compose -f docker-compose.yml down --volumes 2>/dev/null || true; \
+		docker-compose -f docker-compose.test.yml down --volumes 2>/dev/null || true; \
+	else \
+		docker compose -f docker-compose.yml down --volumes 2>/dev/null || true; \
+		docker compose -f docker-compose.test.yml down --volumes 2>/dev/null || true; \
+	fi
 	@rm -rf /tmp/integration-test-results-* 2>/dev/null || true
 	@echo "$(GREEN)✓ Docker 清理完成$(NC)"
 
-# 显示帮助
 .DEFAULT_GOAL := help

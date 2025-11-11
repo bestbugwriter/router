@@ -60,8 +60,6 @@ ENTRYPOINT ["/sbin/tini", "--"]
 # 默认命令（可被覆盖）
 CMD ["log-agent", "/etc/log-pipeline/agent.properties"]
 
----
-
 # Dockerfile for Agent
 FROM alpine:latest as agent
 
@@ -91,8 +89,6 @@ RUN chmod +x /docker-entrypoint-agent.sh
 ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint-agent.sh"]
 
 CMD ["log-agent", "/etc/log-pipeline/agent.properties"]
-
----
 
 # Dockerfile for Router
 FROM alpine:latest as router
@@ -125,8 +121,6 @@ RUN chmod +x /docker-entrypoint-router.sh
 ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint-router.sh"]
 
 CMD ["log-router", "/etc/log-pipeline/router.properties"]
-
----
 
 # Dockerfile for Test Tools (Python-based)
 FROM python:3.11-slim as test-tools

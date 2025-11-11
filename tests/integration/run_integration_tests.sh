@@ -24,6 +24,13 @@ COMPOSE_FILE="$PROJECT_DIR/docker-compose.test.yml"
 LOG_DIR="/tmp/integration-test-logs"
 RESULTS_DIR="/tmp/integration-test-results-$(date +%Y%m%d_%H%M%S)"
 
+# Docker Compose 命令兼容性处理
+if command -v docker-compose >/dev/null 2>&1; then
+    DOCKER_COMPOSE_CMD="docker-compose"
+else
+    DOCKER_COMPOSE_CMD="docker compose"
+fi
+
 # 服务健康检查函数
 check_service_health() {
     local service_name=$1
@@ -175,7 +182,7 @@ start_test_environment() {
     
     # 启动 Docker Compose 服务
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" up -d zookeeper kafka control-platform monitor
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d zookeeper kafka control-platform monitor
     
     # 等待基础服务启动
     echo -e "${YELLOW}等待基础服务启动...${NC}"
@@ -198,7 +205,7 @@ start_test_environment() {
     sed -i.bak "s|/etc/log-pipeline/agent.properties|/etc/log-pipeline/test-agent.properties|g" "$COMPOSE_FILE"
     sed -i.bak "s|/etc/log-pipeline/router.properties|/etc/log-pipeline/test-router.properties|g" "$COMPOSE_FILE"
     
-    docker-compose -f "$COMPOSE_FILE" up -d agent-1 router
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" up -d agent-1 router
     
     # 等待 Agent 和 Router 启动
     sleep 15
@@ -206,13 +213,13 @@ start_test_environment() {
     # 检查 Agent 和 Router 是否正常运行
     if ! docker ps | grep agent-1 >/dev/null; then
         echo -e "${RED}✗ Agent 启动失败${NC}"
-        docker-compose -f "$COMPOSE_FILE" logs agent-1
+        $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs agent-1
         return 1
     fi
     
     if ! docker ps | grep router >/dev/null; then
         echo -e "${RED}✗ Router 启动失败${NC}"
-        docker-compose -f "$COMPOSE_FILE" logs router
+        $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs router
         return 1
     fi
     
@@ -313,15 +320,15 @@ collect_test_results() {
     mkdir -p "$RESULTS_DIR/logs"
     
     echo -e "${BLUE}收集 Router 日志...${NC}"
-    docker-compose -f "$COMPOSE_FILE" logs router > "$RESULTS_DIR/logs/router.log" 2>&1
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs router > "$RESULTS_DIR/logs/router.log" 2>&1
     echo "  保存到: $RESULTS_DIR/logs/router.log"
     
     echo -e "${BLUE}收集 Kafka 日志...${NC}"
-    docker-compose -f "$COMPOSE_FILE" logs kafka > "$RESULTS_DIR/logs/kafka.log" 2>&1
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs kafka > "$RESULTS_DIR/logs/kafka.log" 2>&1
     echo "  保存到: $RESULTS_DIR/logs/kafka.log"
     
     echo -e "${BLUE}收集 ZooKeeper 日志...${NC}"
-    docker-compose -f "$COMPOSE_FILE" logs zookeeper > "$RESULTS_DIR/logs/zookeeper.log" 2>&1
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" logs zookeeper > "$RESULTS_DIR/logs/zookeeper.log" 2>&1
     echo "  保存到: $RESULTS_DIR/logs/zookeeper.log"
     
     # 统计生成的日志文件
@@ -400,7 +407,7 @@ cleanup_test_environment() {
     
     # 停止 Docker 服务
     cd "$PROJECT_DIR"
-    docker-compose -f "$COMPOSE_FILE" down
+    $DOCKER_COMPOSE_CMD -f "$COMPOSE_FILE" down
     
     # 恢复原始配置
     if [ -f "$COMPOSE_FILE.bak" ]; then
@@ -423,11 +430,14 @@ main() {
     
     # 检查依赖
     echo -e "${BLUE}检查依赖...${NC}"
-    if ! command -v docker-compose >/dev/null 2>&1; then
-        echo -e "${RED}✗ docker-compose 未安装${NC}"
+    if command -v docker-compose >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ docker-compose 已安装${NC}"
+    elif docker compose version >/dev/null 2>&1; then
+        echo -e "${GREEN}✓ docker compose 已安装${NC}"
+    else
+        echo -e "${RED}✗ docker-compose 或 docker compose 未安装${NC}"
         exit 1
     fi
-    echo -e "${GREEN}✓ docker-compose 已安装${NC}"
     
     if ! command -v python3 >/dev/null 2>&1; then
         echo -e "${RED}✗ python3 未安装${NC}"

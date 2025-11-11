@@ -51,7 +51,7 @@ cleanup() {
     
     # 停止并移除容器
     log_info "停止 Docker 容器..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" down --volumes 2>/dev/null || true
+    $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" down --volumes 2>/dev/null || true
     
     log_success "清理完成"
 }
@@ -72,11 +72,13 @@ check_dependencies() {
         log_success "docker 已安装 ($(docker --version))"
     fi
     
-    if ! command -v docker-compose >/dev/null 2>&1; then
-        log_error "docker-compose 未安装"
-        missing_deps=1
-    else
+    if command -v docker-compose >/dev/null 2>&1; then
         log_success "docker-compose 已安装 ($(docker-compose --version))"
+    elif docker compose version >/dev/null 2>&1; then
+        log_success "docker compose 已安装 ($(docker compose version))"
+    else
+        log_error "docker-compose 或 docker compose 未安装"
+        missing_deps=1
     fi
     
     if [ $missing_deps -eq 1 ]; then
@@ -90,7 +92,7 @@ build_images() {
     log_step "构建 Docker 镜像"
     
     log_info "构建 Router 镜像..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" build router 2>&1 | grep -E "(Building|Step|Successfully|ERROR)" || true
+    $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" build router 2>&1 | grep -E "(Building|Step|Successfully|ERROR)" || true
     
     if [ $? -ne 0 ]; then
         log_error "Router 镜像构建失败"
@@ -105,7 +107,7 @@ start_base_services() {
     log_step "启动基础服务 (ZooKeeper, Kafka, Control-Platform, Monitor)"
     
     log_info "启动容器..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" up -d zookeeper kafka control-platform monitor 2>&1 | tail -5
+    $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" up -d zookeeper kafka control-platform monitor 2>&1 | tail -5
     
     # 等待服务启动
     log_info "等待服务启动..."
@@ -115,7 +117,7 @@ start_base_services() {
     log_info "检查 ZooKeeper..."
     local zk_ready=0
     for i in {1..30}; do
-        if docker exec $(docker-compose -f "$DOCKER_COMPOSE_FILE" ps -q zookeeper) echo ruok | nc localhost 2181 >/dev/null 2>&1; then
+        if docker exec $($DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" ps -q zookeeper) echo ruok | nc localhost 2181 >/dev/null 2>&1; then
             log_success "ZooKeeper 就绪"
             zk_ready=1
             break
@@ -126,7 +128,7 @@ start_base_services() {
     
     if [ $zk_ready -eq 0 ]; then
         log_error "ZooKeeper 启动失败"
-        docker-compose -f "$DOCKER_COMPOSE_FILE" logs zookeeper
+        $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" logs zookeeper
         return 1
     fi
     
@@ -134,7 +136,7 @@ start_base_services() {
     log_info "检查 Kafka..."
     local kafka_ready=0
     for i in {1..30}; do
-        if docker-compose -f "$DOCKER_COMPOSE_FILE" exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
+        if $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" exec -T kafka kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1; then
             log_success "Kafka 就绪"
             kafka_ready=1
             break
@@ -145,13 +147,13 @@ start_base_services() {
     
     if [ $kafka_ready -eq 0 ]; then
         log_error "Kafka 启动失败"
-        docker-compose -f "$DOCKER_COMPOSE_FILE" logs kafka
+        $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" logs kafka
         return 1
     fi
     
     # 创建测试 topic
     log_info "创建 Kafka Topic: $KAFKA_TOPIC"
-    docker-compose -f "$DOCKER_COMPOSE_FILE" exec -T kafka kafka-topics \
+    $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" exec -T kafka kafka-topics \
         --create \
         --topic "$KAFKA_TOPIC" \
         --bootstrap-server localhost:9092 \
@@ -167,13 +169,13 @@ start_router() {
     log_step "启动 Router"
     
     log_info "启动 Router 容器..."
-    docker-compose -f "$DOCKER_COMPOSE_FILE" up -d router 2>&1 | tail -5
+    $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" up -d router 2>&1 | tail -5
     
     # 等待 Router 启动
     log_info "等待 Router 启动..."
     local router_ready=0
     for i in {1..30}; do
-        if docker-compose -f "$DOCKER_COMPOSE_FILE" exec -T router curl -f http://localhost:9101/health >/dev/null 2>&1; then
+        if $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" exec -T router curl -f http://localhost:9101/health >/dev/null 2>&1; then
             log_success "Router 就绪 (9101/health)"
             router_ready=1
             break
@@ -184,7 +186,7 @@ start_router() {
     
     if [ $router_ready -eq 0 ]; then
         log_error "Router 启动失败"
-        docker-compose -f "$DOCKER_COMPOSE_FILE" logs router | tail -50
+        $DOCKER_COMPOSE_CMD -f "$DOCKER_COMPOSE_FILE" logs router | tail -50
         return 1
     fi
     
@@ -208,7 +210,7 @@ run_log_generation_test() {
         --network log-pipeline-test \
         -e PYTHONUNBUFFERED=1 \
         --entrypoint /usr/local/bin/python \
-        $(docker-compose -f "$DOCKER_COMPOSE_FILE" config --services | grep -E "router|zookeeper" | head -1 | xargs -I {} docker-compose -f "$DOCKER_COMPOSE_FILE" images {} | awk 'NR==2 {print $1}') \
+        $(docker build -q --target test-tools .) \
         /app/tools/log_generator.py \
         --output-dir /tmp \
         --duration "$TEST_DURATION" \
@@ -228,7 +230,7 @@ run_log_generation_test() {
         --network log-pipeline-test \
         -e PYTHONUNBUFFERED=1 \
         --entrypoint /usr/local/bin/python \
-        $(docker-compose -f "$DOCKER_COMPOSE_FILE" images router | awk 'NR==2 {print $1}') \
+        $(docker build -q --target test-tools .) \
         /app/tools/kafka_validator.py \
         --bootstrap-servers "kafka:29092" \
         --topic "$KAFKA_TOPIC" \
