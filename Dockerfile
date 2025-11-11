@@ -60,8 +60,6 @@ ENTRYPOINT ["/sbin/tini", "--"]
 # 默认命令（可被覆盖）
 CMD ["log-agent", "/etc/log-pipeline/agent.properties"]
 
----
-
 # Dockerfile for Agent
 FROM alpine:latest as agent
 
@@ -91,8 +89,6 @@ RUN chmod +x /docker-entrypoint-agent.sh
 ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint-agent.sh"]
 
 CMD ["log-agent", "/etc/log-pipeline/agent.properties"]
-
----
 
 # Dockerfile for Router
 FROM alpine:latest as router
@@ -125,3 +121,29 @@ RUN chmod +x /docker-entrypoint-router.sh
 ENTRYPOINT ["/sbin/tini", "--", "/docker-entrypoint-router.sh"]
 
 CMD ["log-router", "/etc/log-pipeline/router.properties"]
+
+# Dockerfile for Test Tools (Python-based)
+FROM python:3.11-slim as test-tools
+
+# 安装系统依赖
+RUN apt-get update && apt-get install -y \
+    curl \
+    jq \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
+RUN pip install --no-cache-dir \
+    kafka-python==2.0.2 \
+    psutil==5.9.4
+
+# 复制测试工具
+COPY tests/tools/ /app/tools/
+
+WORKDIR /app
+
+# 设置日志生成器
+RUN chmod +x /app/tools/*.py
+
+ENV PYTHONUNBUFFERED=1
+
+ENTRYPOINT ["/usr/local/bin/python"]
