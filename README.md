@@ -375,6 +375,54 @@ backpressure.session_buffer_high_watermark_mb = 128
 3. 推送到远程：`git push origin feature/xxx`
 4. 创建 Pull Request
 
+## 测试
+
+项目提供了完整的测试框架，包括单元测试、集成测试、性能测试和故障恢复测试。
+
+### 快速测试
+
+```bash
+# 运行快速测试（推荐日常开发）
+make test-quick
+# 或者
+bash tests/run_comprehensive_tests.sh --quick
+
+# 运行完整测试套件
+make test
+# 或者
+bash tests/run_comprehensive_tests.sh
+```
+
+### 测试类型
+
+1. **单元测试**: 测试组件基本功能
+   ```bash
+   make test-unit
+   ```
+
+2. **集成测试**: 测试完整数据流（Agent → Router → Kafka）
+   ```bash
+   make test-integration
+   ```
+
+3. **性能测试**: 多负载级别性能测试
+   ```bash
+   make test-performance
+   ```
+
+4. **反压恢复测试**: 故障恢复和容错测试
+   ```bash
+   make test-backpressure
+   ```
+
+### 测试工具
+
+- **日志生成器**: 生成各种格式的测试日志
+- **Kafka 验证器**: 验证数据完整性和性能
+- **Docker 环境**: 自动启动完整的测试环境
+
+详细测试说明请参考 [tests/README.md](tests/README.md)
+
 ## 设计文档
 
 详见 [DESIGN.md](DESIGN.md)
